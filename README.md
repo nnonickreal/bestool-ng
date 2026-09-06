@@ -5,7 +5,7 @@ please note that this fork was written with LLM assistance, but has been fully t
 
 ## what's new?
 
-i added new options and made the tool more resilient to unexpected chip states. 
+added new options and made the tool more resilient to unexpected chip states. 
 
 for example, if the SoC is stuck in programmer mode while reading or writing due to a poor UART connection, tool should detect the chip's state immediately and will resume immediately from the stage the chip is currently in (because resetting the chip on audio devices is often not easy).
 
@@ -15,7 +15,7 @@ also, now it should work with all programmer blobs (and therefore chips as well)
 
 ## BES SoCs support
 
-i left all the programmer blobs from the [latest publicly available official BES programming tool](https://github.com/Derek-Vencer/tws_earbuds/tree/main/BES_DldProductLine_VS1.70.8) in the `programmers/` directory.
+the programmer blobs from the [official BES programming tool](https://github.com/Derek-Vencer/tws_earbuds/tree/main/BES_DldProductLine_VS1.70.8) are included in the `programmers/` directory.
 
 the rights to these blobs belong to BES (as do the rights to the default `programmer.bin` file in the project's root directory).
 
