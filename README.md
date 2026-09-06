@@ -44,8 +44,8 @@ this fork adds new options for the `write-image` and `read-image` commands so th
 | :--- | :--- | :--- |
 | `--programmer` / `-P` | specify a custom programmer blob | `-P programmers/programmer1502x.bin` |
 | `--start-address` / `-a` | specify the custom flash base address | `-a 0x24000000` |
-| `--length` / `-l` | specify the custom reading length (works only with `read-image`) | `-l 0x18000` |
-| `--offset` / `-o` | specify a custom offset relative to the base address | `-o 0x18000` |
+| `--length` / `-l` (stock) | specify the custom reading length (works only with `read-image`) | `-l 0x18000` |
+| `--offset` / `-o` (stock) | specify a custom offset relative to the base address | `-o 0x18000` |
 
 for example:
 ```bash
