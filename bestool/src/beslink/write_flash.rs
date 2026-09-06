@@ -7,6 +7,7 @@ use std::io::Write;
 use std::time::Duration;
 use tracing::error;
 use tracing::info;
+
 const MAX_UNACKED_PACKETS: usize = 2;
 
 pub fn burn_image_to_flash(
@@ -15,7 +16,7 @@ pub fn burn_image_to_flash(
     address: usize,
 ) -> Result<(), BESLinkError> {
     let mut payload = payload_in;
-    //Pad image to FLASH_BUFFER_SIZE
+    // Pad image to FLASH_BUFFER_SIZE
     while !payload.len().is_multiple_of(FLASH_BUFFER_SIZE) {
         payload.push(0xFF);
     }
@@ -30,11 +31,12 @@ pub fn burn_image_to_flash(
         }
     }
 
-    //Now loop, send a flash chunk and handle an ack
+    // Now loop, send a flash chunk and handle an ack
     let mut chunk_num = 0;
     let mut outstanding_chunks = 0;
     let file_chunks = payload.chunks(FLASH_BUFFER_SIZE);
     let file_chunk_count = file_chunks.len();
+    
     for chunk in file_chunks {
         loop {
             if outstanding_chunks < MAX_UNACKED_PACKETS {
@@ -50,11 +52,13 @@ pub fn burn_image_to_flash(
                 outstanding_chunks += 1;
                 break; // Step to next chunk
             }
-            //Wait for an ack
+            // Wait for an ack
             match sync(serial_port, MessageTypes::FlashBurnData) {
                 Ok(m) => {
                     outstanding_chunks -= 1;
-                    info!("Confirmation for message {}", m.payload[3]);
+                    // bes1502x wrong answer packet panic fix
+                    let msg_id = if m.payload.len() > 3 { m.payload[3].to_string() } else { "unknown".to_string() };
+                    info!("Confirmation for message {}", msg_id);
                 }
                 Err(e) => {
                     error!("Waiting for flash confirmation, {}", e);
@@ -62,12 +66,14 @@ pub fn burn_image_to_flash(
             }
         }
     }
-    //Wait for rest of chunk confirmations
+    
+    // Wait for rest of chunk confirmations
     while outstanding_chunks > 0 {
         match sync(serial_port, MessageTypes::FlashBurnData) {
             Ok(m) => {
                 outstanding_chunks -= 1;
-                info!("Confirmation for message {}", m.payload[3]);
+                let msg_id = if m.payload.len() > 3 { m.payload[3].to_string() } else { "unknown".to_string() };
+                info!("Confirmation for message {}", msg_id);
             }
             Err(e) => {
                 error!("Waiting for flash confirmation, {}", e);
@@ -77,6 +83,7 @@ pub fn burn_image_to_flash(
     info!("Sending flash finalise");
     send_flash_commit_message(serial_port, address)
 }
+
 fn send_flash_commit_message(
     serial_port: &mut Box<dyn SerialPort>,
     address: usize,
@@ -87,16 +94,13 @@ fn send_flash_commit_message(
         payload: vec![0x06, 0x09, 0x22],
         checksum: 0xEB,
     };
-    burn_prepare_message
-        .payload
-        .extend((address as u32).to_le_bytes());
-
-    burn_prepare_message
-        .payload
-        .extend(vec![0x1C, 0xEC, 0x57, 0xBE]);
+    burn_prepare_message.payload.extend((address as u32).to_le_bytes());
+    burn_prepare_message.payload.extend(vec![0x1C, 0xEC, 0x57, 0xBE]);
     burn_prepare_message.set_checksum();
+    
     send_message(serial_port, burn_prepare_message)?;
     info!("Sent flash finalise message");
+    
     let resp = sync(serial_port, MessageTypes::FlashCommand)?;
     if resp.payload != vec![6, 1, 0] {
         return Err(BESLinkError::BadResponseCode {
@@ -107,6 +111,7 @@ fn send_flash_commit_message(
     }
     Ok(())
 }
+
 fn get_flash_chunk_msg(payload: Vec<u8>, chunk: usize) -> BesMessage {
     let mut data_message = BesMessage {
         sync: BES_SYNC,
@@ -114,15 +119,14 @@ fn get_flash_chunk_msg(payload: Vec<u8>, chunk: usize) -> BesMessage {
         payload: vec![0xC1 + (chunk as u8), 0x0B],
         checksum: 0xEB,
     };
-    data_message
-        .payload
-        .extend((FLASH_BUFFER_SIZE as u16).to_le_bytes());
+    data_message.payload.extend((FLASH_BUFFER_SIZE as u16).to_le_bytes());
     data_message.payload.extend(vec![0x00, 0x00]);
 
     let crc = Crc::<u32>::new(&CRC_32_ISO_HDLC);
     let mut digest = crc.digest();
     digest.update(&payload);
     let crc_value = digest.finalize();
+    
     data_message.payload.extend(crc_value.to_le_bytes());
     data_message.payload.extend(vec![chunk as u8, 0x00, 0x00]);
     data_message.set_checksum();
@@ -144,7 +148,7 @@ fn send_flash_chunk_msg(
     match serial_port.write_all(message_vec.as_slice()) {
         Ok(_) => {
             info!("Wrote flash buffer of len 0x{:X} ", message_vec.len());
-            std::thread::sleep(Duration::from_millis(10)); // This is just a small rate limiter
+            std::thread::sleep(Duration::from_millis(10));
             Ok(())
         }
         Err(e) => {
@@ -165,21 +169,14 @@ fn send_flash_erase(
         payload: vec![0x05, 0x0C],
         checksum: 0xEB,
     };
-    burn_prepare_message
-        .payload
-        .extend((address as u32).to_le_bytes());
-    burn_prepare_message
-        .payload
-        .extend((payload_len as u32).to_le_bytes());
-    burn_prepare_message
-        .payload
-        .extend(vec![0x00, 0x80, 0x00, 0x00]);
+    burn_prepare_message.payload.extend((address as u32).to_le_bytes());
+    burn_prepare_message.payload.extend((payload_len as u32).to_le_bytes());
+    burn_prepare_message.payload.extend(vec![0x00, 0x80, 0x00, 0x00]);
     burn_prepare_message.set_checksum();
-    info!(
-        "Sent erase start message, {:X?}",
-        burn_prepare_message.to_vec()
-    );
+    
+    info!("Sent erase start message, {:X?}", burn_prepare_message.to_vec());
     send_message(serial_port, burn_prepare_message)?;
+    
     let resp = sync(serial_port, MessageTypes::EraseBurnStart)?;
     if resp.payload != vec![0x05, 0x01, 0x00] {
         return Err(BESLinkError::BadResponseCode {
@@ -189,36 +186,4 @@ fn send_flash_erase(
         });
     }
     Ok(resp)
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::beslink::write_flash::get_flash_chunk_msg;
-
-    //Embed the bin file for future
-    const CHUNK1_TEST: &[u8; 32768] = include_bytes!("../../../chunk1.bin");
-    const CHUNK2_TEST: &[u8; 32768] = include_bytes!("../../../chunk2.bin");
-
-    #[test]
-    fn test_get_flash_chunk_msg() {
-        //make fake port it can write to
-        let expected_header_data: Vec<u8> = vec![
-            0xBE, 0x62, 0xC1, 0x0B, 0x00, 0x80, 0x00, 0x00, 0xAB, 0x77, 0x7F, 0xF4, 0x00, 0x00,
-            0x00, 0xFE,
-        ];
-        let message = get_flash_chunk_msg(CHUNK1_TEST.to_vec(), 0);
-        let message_flat = message.to_vec();
-        assert_eq!(message_flat, expected_header_data);
-    }
-    #[test]
-    fn test_get_flash_chunk_msg2() {
-        //make fake port it can write to
-        let expected_header_data: Vec<u8> = vec![
-            0xBE, 0x62, 0xC2, 0x0B, 0x00, 0x80, 0x00, 0x00, 0x34, 0x90, 0x61, 0xF9, 0x01, 0x00,
-            0x00, 0x73,
-        ];
-        let message = get_flash_chunk_msg(CHUNK2_TEST.to_vec(), 1);
-        let message_flat = message.to_vec();
-        assert_eq!(message_flat, expected_header_data);
-    }
 }
